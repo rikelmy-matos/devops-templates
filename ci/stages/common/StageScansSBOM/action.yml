@@ -1,0 +1,93 @@
+name: StageScansSBOM
+description: "Generate SBOM (CycloneDX) with Syft and optionally upload to Dependency-Track"
+inputs:
+  image:
+    description: Optional full image ref (e.g. ghcr.io/org/app:tag) to generate SBOM from image
+    required: false
+    default: ''
+  dependency-track-url:
+    description: Dependency-Track base URL (e.g. https://dtrack.example.com/)
+    required: false
+    default: ''
+  dependency-track-api-key:
+    description: Dependency-Track API key (use secrets)
+    required: false
+    default: ''
+  dependency-track-project-uuid:
+    description: Dependency-Track Project UUID (optional if using name+version)
+    required: false
+    default: ''
+  dependency-track-project-name:
+    description: Dependency-Track Project Name
+    required: false
+    default: ''
+  dependency-track-project-version:
+    description: Dependency-Track Project Version
+    required: false
+    default: ''
+  output-dir:
+    description: Output directory for SBOM and reports
+    required: false
+    default: artifacts/syft
+runs:
+  using: composite
+  steps:
+    - name: Ensure output dir
+      shell: bash
+      run: mkdir -p ${{ inputs['output-dir'] }}
+
+    - name: Generate SBOM (Syft) - workspace
+      if: ${{ inputs.image == '' }}
+      uses: anchore/sbom-action@v0
+      with:
+        path: .
+        format: cyclonedx-json
+        output-file: ${{ inputs['output-dir'] }}/sbom-cyclonedx.json
+
+    - name: Generate SBOM (Syft) - image
+      if: ${{ inputs.image != '' }}
+      uses: anchore/sbom-action@v0
+      with:
+        image: ${{ inputs.image }}
+        format: cyclonedx-json
+        output-file: ${{ inputs['output-dir'] }}/sbom-cyclonedx.json
+
+    - name: Upload SBOM artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: syft-reports
+        path: ${{ inputs['output-dir'] }}/sbom-cyclonedx.json
+
+    - name: Upload SBOM to Dependency-Track
+      if: ${{ inputs['dependency-track-url'] != '' && inputs['dependency-track-api-key'] != '' }}
+      shell: bash
+      env:
+        DTRACK_URL: ${{ inputs['dependency-track-url'] }}
+        DTRACK_API_KEY: ${{ inputs['dependency-track-api-key'] }}
+        DTRACK_PROJECT_UUID: ${{ inputs['dependency-track-project-uuid'] }}
+        DTRACK_PROJECT_NAME: ${{ inputs['dependency-track-project-name'] }}
+        DTRACK_PROJECT_VERSION: ${{ inputs['dependency-track-project-version'] }}
+      run: |
+        set -euo pipefail
+        FILE="${{ inputs['output-dir'] }}/sbom-cyclonedx.json"
+        if [ ! -s "$FILE" ]; then
+          echo "SBOM file not found: $FILE" >&2
+          exit 1
+        fi
+        url="${DTRACK_URL%/}/api/v1/bom"
+        if [ -n "$DTRACK_PROJECT_UUID" ]; then
+          curl -fsSL -X POST "$url" \
+            -H "X-Api-Key: $DTRACK_API_KEY" \
+            -H "Content-Type: application/json" \
+            --data-binary @<(jq -c --arg bom "$(base64 -w0 "$FILE" 2>/dev/null || base64 -w 0 "$FILE")" '{ bom: $bom, project: $ENV.DTRACK_PROJECT_UUID, autoCreate: true }')
+        else
+          curl -fsSL -X POST "$url" \
+            -H "X-Api-Key: $DTRACK_API_KEY" \
+            -H "Content-Type: application/json" \
+            --data-binary @<(jq -c \
+              --arg bom "$(base64 -w0 "$FILE" 2>/dev/null || base64 -w 0 "$FILE")" \
+              --arg name "$DTRACK_PROJECT_NAME" \
+              --arg version "$DTRACK_PROJECT_VERSION" \
+              '{ bom: $bom, projectName: $name, projectVersion: $version, autoCreate: true }')
+        fi
+

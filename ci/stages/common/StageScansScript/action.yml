@@ -1,0 +1,103 @@
+name: StageScansScript
+description: "Run repo scans: Trivy FS/Config/Secrets, Semgrep, KICS, Gitleaks, Microsoft Security DevOps"
+inputs:
+  run-trivy:
+    description: Run Trivy filesystem/config/secret scan
+    required: false
+    default: 'true'
+  run-semgrep:
+    description: Run Semgrep SAST
+    required: false
+    default: 'true'
+  run-kics:
+    description: Run KICS IaC scan
+    required: false
+    default: 'true'
+  run-gitleaks:
+    description: Run Gitleaks
+    required: false
+    default: 'true'
+  run-msdo:
+    description: Run Microsoft Security DevOps
+    required: false
+    default: 'true'
+  semgrep-config:
+    description: Semgrep ruleset (e.g. p/ci)
+    required: false
+    default: 'p/ci'
+runs:
+  using: composite
+  steps:
+    - name: Ensure workspace
+      shell: bash
+      run: mkdir -p artifacts/sarif
+
+    - name: Trivy FS/Config/Secret
+      if: ${{ inputs['run-trivy'] == 'true' }}
+      uses: aquasecurity/trivy-action@0.20.0
+      with:
+        scan-type: fs
+        scanners: vuln,config,secret
+        format: sarif
+        output: artifacts/sarif/trivy-fs.sarif
+        severity: CRITICAL,HIGH,MEDIUM,LOW
+        ignore-unfixed: true
+
+    - name: Upload Trivy FS SARIF
+      if: ${{ inputs['run-trivy'] == 'true' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: artifacts/sarif/trivy-fs.sarif
+
+    - name: Semgrep
+      if: ${{ inputs['run-semgrep'] == 'true' }}
+      uses: returntocorp/semgrep-action@v1
+      with:
+        config: ${{ inputs['semgrep-config'] }}
+        generateSarif: true
+        save: artifacts/sarif/semgrep.sarif
+
+    - name: Upload Semgrep SARIF
+      if: ${{ inputs['run-semgrep'] == 'true' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: artifacts/sarif/semgrep.sarif
+
+    - name: KICS IaC scan
+      if: ${{ inputs['run-kics'] == 'true' }}
+      uses: Checkmarx/kics-github-action@v2.1.5
+      with:
+        path: .
+        output_path: artifacts/sarif
+        output_formats: 'sarif'
+        fail_on: 'high,medium' 
+
+    - name: Upload KICS SARIF
+      if: ${{ inputs['run-kics'] == 'true' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: artifacts/sarif/results.sarif
+
+    - name: Gitleaks
+      if: ${{ inputs['run-gitleaks'] == 'true' }}
+      uses: gitleaks/gitleaks-action@v2
+      with:
+        args: detect --report-format sarif --report-path artifacts/sarif/gitleaks.sarif --no-banner
+
+    - name: Upload Gitleaks SARIF
+      if: ${{ inputs['run-gitleaks'] == 'true' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: artifacts/sarif/gitleaks.sarif
+
+    - name: Microsoft Security DevOps
+      if: ${{ inputs['run-msdo'] == 'true' }}
+      uses: microsoft/security-devops-action@preview
+
+    - name: Upload SARIF artifacts bundle
+      uses: actions/upload-artifact@v4
+      with:
+        name: CodeAnalysisLogs
+        path: artifacts/sarif/*.sarif
+        if-no-files-found: ignore
+

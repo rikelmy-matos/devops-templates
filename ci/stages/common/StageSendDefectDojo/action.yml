@@ -1,0 +1,108 @@
+name: StageSendDefectDojo
+description: "Upload SARIF files to DefectDojo via API"
+inputs:
+  defectdojo-url:
+    description: Base URL for DefectDojo (e.g. https://defectdojo.example.com)
+    required: true
+  defectdojo-api-key:
+    description: API key for DefectDojo (use secrets)
+    required: true
+  product-name:
+    description: Product name (if not using product-id)
+    required: false
+    default: ''
+  product-id:
+    description: Product ID (optional)
+    required: false
+    default: ''
+  engagement-name:
+    description: Engagement name (optional)
+    required: false
+    default: ''
+  engagement-id:
+    description: Engagement ID (optional)
+    required: false
+    default: ''
+  test-id:
+    description: Test ID (optional)
+    required: false
+    default: ''
+  branch-tag:
+    description: Branch name tag
+    required: false
+    default: ${{ github.ref_name }}
+  build-id:
+    description: Build identifier
+    required: false
+    default: ${{ github.run_id }}
+  commit-hash:
+    description: Commit hash
+    required: false
+    default: ${{ github.sha }}
+  scm-uri:
+    description: Repository URL
+    required: false
+    default: ${{ github.server_url }}/${{ github.repository }}
+  build-url:
+    description: CI run URL
+    required: false
+    default: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  environment:
+    description: Environment name (e.g. dev, prod)
+    required: false
+    default: ''
+  sarif-glob:
+    description: Glob to find SARIF files to upload
+    required: false
+    default: 'artifacts/sarif/**/*.sarif'
+runs:
+  using: composite
+  steps:
+    - name: Upload SARIF to DefectDojo
+      shell: bash
+      env:
+        DD_URL: ${{ inputs.defectdojo-url }}
+        DD_API_KEY: ${{ inputs.defectdojo-api-key }}
+        DD_PRODUCT_NAME: ${{ inputs['product-name'] }}
+        DD_PRODUCT_ID: ${{ inputs['product-id'] }}
+        DD_ENGAGEMENT_NAME: ${{ inputs['engagement-name'] }}
+        DD_ENGAGEMENT_ID: ${{ inputs['engagement-id'] }}
+        DD_TEST_ID: ${{ inputs['test-id'] }}
+        DD_BRANCH_TAG: ${{ inputs['branch-tag'] }}
+        DD_BUILD_ID: ${{ inputs['build-id'] }}
+        DD_COMMIT_HASH: ${{ inputs['commit-hash'] }}
+        DD_SCM_URI: ${{ inputs['scm-uri'] }}
+        DD_BUILD_URL: ${{ inputs['build-url'] }}
+        DD_ENVIRONMENT: ${{ inputs.environment }}
+      run: |
+        set -euo pipefail
+        shopt -s globstar nullglob
+        files=( ${{ inputs['sarif-glob'] }} )
+        if [ ${#files[@]} -eq 0 ]; then
+          echo "No SARIF files found for upload (${ { inputs['sarif-glob'] } })"
+          exit 0
+        fi
+        endpoint="${DD_URL%/}/api/v2/import-scan/"
+        echo "Uploading ${#files[@]} SARIF file(s) to $endpoint"
+        status=0
+        for f in "${files[@]}"; do
+          echo "-> Uploading $f"
+          curl -sS -o /dev/stderr -w "HTTP %{http_code}\n" -X POST "$endpoint" \
+            -H "Authorization: Token $DD_API_KEY" \
+            -H "Accept: application/json" \
+            -F scan_type=SARIF \
+            -F file=@"$f" \
+            -F branch_tag="$DD_BRANCH_TAG" \
+            -F build_id="$DD_BUILD_ID" \
+            -F commit_hash="$DD_COMMIT_HASH" \
+            -F scm_uri="$DD_SCM_URI" \
+            -F build_url="$DD_BUILD_URL" \
+            -F environment="$DD_ENVIRONMENT" \
+            ${DD_PRODUCT_ID:+-F product="$DD_PRODUCT_ID"} \
+            ${DD_ENGAGEMENT_ID:+-F engagement="$DD_ENGAGEMENT_ID"} \
+            ${DD_TEST_ID:+-F test="$DD_TEST_ID"} \
+            ${DD_PRODUCT_NAME:+-F product_name="$DD_PRODUCT_NAME"} \
+            ${DD_ENGAGEMENT_NAME:+-F engagement_name="$DD_ENGAGEMENT_NAME"} || status=$?
+        done
+        exit $status
+

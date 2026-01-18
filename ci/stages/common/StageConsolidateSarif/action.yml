@@ -1,0 +1,35 @@
+name: StageConsolidateSarif
+description: "Collect and publish SARIF files as artifact (GitHub auto-aggregates code scanning)"
+inputs:
+  search-glob:
+    description: Glob to search for SARIF files
+    required: false
+    default: '**/*.sarif'
+  artifact-name:
+    description: Artifact name to publish
+    required: false
+    default: 'sarif-reports'
+runs:
+  using: composite
+  steps:
+    - name: Find SARIF files
+      id: find
+      shell: bash
+      run: |
+        shopt -s globstar nullglob
+        count=0
+        mkdir -p artifacts/sarif
+        for f in ${{ inputs['search-glob'] }}; do
+          cp "$f" artifacts/sarif/$(basename "$f") || true
+          count=$((count+1))
+        done
+        echo "found=$count" >> $GITHUB_OUTPUT
+        echo "Collected $count SARIF files"
+
+    - name: Upload SARIF bundle artifact
+      if: ${{ steps.find.outputs.found != '0' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs['artifact-name'] }}
+        path: artifacts/sarif/*.sarif
+

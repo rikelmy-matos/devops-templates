@@ -1,0 +1,49 @@
+name: StageTests
+description: "Setup .NET, publish, and run tests with coverage; upload artifacts"
+inputs:
+  dotnet-version:
+    description: .NET SDK version
+    required: false
+    default: '9.0.x'
+  build-configuration:
+    description: Build configuration
+    required: false
+    default: 'Release'
+  publish-artifact-name:
+    description: Artifact name for published output
+    required: false
+    default: 'drop'
+runs:
+  using: composite
+  steps:
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ inputs['dotnet-version'] }}
+
+    - name: Publish web projects
+      shell: bash
+      run: |
+        dotnet publish --configuration "${{ inputs['build-configuration'] }}" --output ./artifacts/publish \
+          --nologo
+
+    - name: Upload publish artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs['publish-artifact-name'] }}
+        path: artifacts/publish
+
+    - name: Run tests with coverage
+      shell: bash
+      run: |
+        dotnet test --collect "XPlat Code Coverage" --logger "trx;LogFileName=test_results.trx" --nologo
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results
+        path: |
+          **/TestResults/*.trx
+          **/TestResults/*/coverage.cobertura.xml
+        if-no-files-found: warn
+

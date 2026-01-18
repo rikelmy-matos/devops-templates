@@ -1,0 +1,34 @@
+name: StageScansScriptSonarQube
+description: "Run SonarQube scan using SonarSource action"
+inputs:
+  sonar-host-url:
+    description: SonarQube server URL
+    required: true
+  sonar-token:
+    description: SonarQube token (use secrets)
+    required: true
+  project-key:
+    description: SonarQube project key
+    required: true
+  project-name:
+    description: SonarQube project name
+    required: false
+    default: ''
+  scan-path:
+    description: Path to scan
+    required: false
+    default: '.'
+runs:
+  using: composite
+  steps:
+    - name: SonarQube Scan
+      uses: SonarSource/sonarqube-scan-action@v2
+      env:
+        SONAR_HOST_URL: ${{ inputs['sonar-host-url'] }}
+        SONAR_TOKEN: ${{ inputs['sonar-token'] }}
+      with:
+        projectBaseDir: ${{ inputs['scan-path'] }}
+        args: >-
+          -Dsonar.projectKey=${{ inputs['project-key'] }}
+          ${{ inputs['project-name'] != '' && format('-Dsonar.projectName={0}', inputs['project-name']) || '' }}
+

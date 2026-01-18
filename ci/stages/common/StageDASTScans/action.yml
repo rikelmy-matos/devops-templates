@@ -1,0 +1,54 @@
+name: StageDASTScans
+description: "Run ZAP baseline DAST against a target URL and upload SARIF"
+inputs:
+  target-url:
+    description: Target URL to scan (e.g. https://app.example.com)
+    required: true
+  zap-image:
+    description: ZAP Docker image
+    required: false
+    default: ghcr.io/zaproxy/zaproxy:stable
+  reports-dir:
+    description: Directory to write reports
+    required: false
+    default: artifacts/zap
+  artifact-name:
+    description: Artifact name for ZAP SARIF
+    required: false
+    default: zapSarif
+runs:
+  using: composite
+  steps:
+    - name: Ensure reports dir
+      shell: bash
+      run: mkdir -p ${{ inputs['reports-dir'] }}
+
+    - name: ZAP Baseline Scan
+      uses: zaproxy/action-baseline@v0.12.0
+      with:
+        target: ${{ inputs['target-url'] }}
+        docker_name: ${{ inputs['zap-image'] }}
+        cmd_options: '-a'
+        allow_issue_writing: false
+        sarif_output: true
+        issue_title: 'ZAP Baseline Findings'
+
+    - name: Move SARIF if created
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -f report.sarif ]; then mv report.sarif "${{ inputs['reports-dir'] }}/zap.sarif"; fi
+
+    - name: Upload SARIF to code scanning
+      if: ${{ hashFiles(format('{0}/zap.sarif', inputs['reports-dir'])) != '' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs['reports-dir'] }}/zap.sarif
+
+    - name: Upload SARIF artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs['artifact-name'] }}
+        path: ${{ inputs['reports-dir'] }}/zap.sarif
+        if-no-files-found: ignore
+
