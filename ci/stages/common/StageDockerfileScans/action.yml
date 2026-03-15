@@ -52,21 +52,21 @@ runs:
       with:
         sarif_file: trivy-image.sarif
 
-    - name: Anchore Grype scan via action
-      uses: anchore/scan-action@v3
+    - name: Grype image scan (SARIF)
+      shell: bash
       continue-on-error: true
       env:
+        GRYPE_REGISTRY_AUTH_AUTHORITY: ${{ inputs.registry }}
         GRYPE_REGISTRY_AUTH_USERNAME: ${{ inputs.username }}
         GRYPE_REGISTRY_AUTH_PASSWORD: ${{ inputs.password }}
-      with:
-        image: ${{ inputs.registry != '' && format('{0}/', inputs.registry) || '' }}${{ inputs.image }}:${{ inputs.tag }}
-        fail-build: false
-        output-format: sarif
-        only-fixed: false
+      run: |
+        curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+        IMAGE="${{ inputs.registry != '' && format('{0}/', inputs.registry) || '' }}${{ inputs.image }}:${{ inputs.tag }}"
+        grype "$IMAGE" --output sarif --file grype-image.sarif || true
 
     - name: Upload Grype SARIF to code scanning
-      if: ${{ hashFiles('results.sarif') != '' }}
+      if: ${{ hashFiles('grype-image.sarif') != '' }}
       uses: github/codeql-action/upload-sarif@v4
       with:
-        sarif_file: results.sarif
+        sarif_file: grype-image.sarif
 
