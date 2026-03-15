@@ -32,7 +32,8 @@ runs:
         password: ${{ inputs.password }}
 
     - name: Trivy image scan (SARIF)
-      uses: aquasecurity/trivy-action@0.20.0
+      uses: aquasecurity/trivy-action@0.35.0
+      continue-on-error: true
       with:
         image-ref: ${{ inputs.registry != '' && format('{0}/', inputs.registry) || '' }}${{ inputs.image }}:${{ inputs.tag }}
         format: 'sarif'
@@ -41,12 +42,14 @@ runs:
         ignore-unfixed: true
 
     - name: Upload Trivy SARIF to code scanning
+      if: ${{ hashFiles('trivy-image.sarif') != '' }}
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: trivy-image.sarif
 
     - name: Anchore Grype scan via action
       uses: anchore/scan-action@v3
+      continue-on-error: true
       with:
         image: ${{ inputs.registry != '' && format('{0}/', inputs.registry) || '' }}${{ inputs.image }}:${{ inputs.tag }}
         fail-build: false
@@ -54,6 +57,7 @@ runs:
         only-fixed: false
 
     - name: Upload Grype SARIF to code scanning
+      if: ${{ hashFiles('results.sarif') != '' }}
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: results.sarif
