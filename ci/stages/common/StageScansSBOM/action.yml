@@ -5,6 +5,14 @@ inputs:
     description: Optional full image ref (e.g. ghcr.io/org/app:tag) to generate SBOM from image
     required: false
     default: ''
+  registry-username:
+    description: Registry username for pulling private images (use github.actor for GHCR)
+    required: false
+    default: ''
+  registry-password:
+    description: Registry password/token for pulling private images (use secrets.GITHUB_TOKEN)
+    required: false
+    default: ''
   dependency-track-url:
     description: Dependency-Track base URL (e.g. https://dtrack.example.com/)
     required: false
@@ -36,21 +44,29 @@ runs:
       shell: bash
       run: mkdir -p ${{ inputs['output-dir'] }}
 
+    - name: Install Syft
+      shell: bash
+      run: |
+        curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
     - name: Generate SBOM (Syft) - workspace
       if: ${{ inputs.image == '' }}
-      uses: anchore/sbom-action@v0
-      with:
-        path: .
-        format: cyclonedx-json
-        output-file: ${{ inputs['output-dir'] }}/sbom-cyclonedx.json
+      shell: bash
+      run: |
+        syft scan dir:. \
+          --output cyclonedx-json \
+          --file ${{ inputs['output-dir'] }}/sbom-cyclonedx.json
 
     - name: Generate SBOM (Syft) - image
       if: ${{ inputs.image != '' }}
-      uses: anchore/sbom-action@v0
-      with:
-        image: ${{ inputs.image }}
-        format: cyclonedx-json
-        output-file: ${{ inputs['output-dir'] }}/sbom-cyclonedx.json
+      shell: bash
+      env:
+        SYFT_REGISTRY_AUTH_USERNAME: ${{ inputs['registry-username'] }}
+        SYFT_REGISTRY_AUTH_PASSWORD: ${{ inputs['registry-password'] }}
+      run: |
+        syft scan registry:${{ inputs.image }} \
+          --output cyclonedx-json \
+          --file ${{ inputs['output-dir'] }}/sbom-cyclonedx.json
 
     - name: Upload SBOM artifact
       uses: actions/upload-artifact@v4
