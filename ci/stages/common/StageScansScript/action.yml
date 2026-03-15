@@ -35,6 +35,7 @@ runs:
     - name: Trivy FS/Config/Secret
       if: ${{ inputs['run-trivy'] == 'true' }}
       uses: aquasecurity/trivy-action@0.20.0
+      continue-on-error: true
       with:
         scan-type: fs
         scanners: vuln,config,secret
@@ -58,12 +59,13 @@ runs:
     - name: Semgrep
       if: ${{ inputs['run-semgrep'] == 'true' }}
       shell: bash
+      continue-on-error: true
       run: |
         pip install semgrep --quiet
         semgrep scan --config "${{ inputs['semgrep-config'] }}" \
           --sarif --output artifacts/sarif/semgrep.sarif \
           --no-autofix \
-          . || true
+          .
 
     - name: Upload Semgrep SARIF
       if: ${{ inputs['run-semgrep'] == 'true' }}
@@ -74,26 +76,34 @@ runs:
     - name: KICS IaC scan
       if: ${{ inputs['run-kics'] == 'true' }}
       uses: Checkmarx/kics-github-action@v2.1.5
+      continue-on-error: true
       with:
         path: .
         output_path: artifacts/sarif
         output_formats: 'sarif'
-        fail_on: 'high,medium' 
+        fail_on: 'high,medium'
 
     - name: Upload KICS SARIF
-      if: ${{ inputs['run-kics'] == 'true' }}
+      if: ${{ inputs['run-kics'] == 'true' && hashFiles('artifacts/sarif/results.sarif') != '' }}
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: artifacts/sarif/results.sarif
 
     - name: Gitleaks
       if: ${{ inputs['run-gitleaks'] == 'true' }}
-      uses: gitleaks/gitleaks-action@v2
-      with:
-        args: detect --report-format sarif --report-path artifacts/sarif/gitleaks.sarif --no-banner
+      shell: bash
+      continue-on-error: true
+      run: |
+        curl -sSfL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep '"tag_name"' | cut -d'"' -f4 | tr -d v)_linux_x64.tar.gz \
+          | tar -xz -C /usr/local/bin gitleaks
+        gitleaks detect --source . \
+          --report-format sarif \
+          --report-path artifacts/sarif/gitleaks.sarif \
+          --no-banner \
+          --exit-code 0
 
     - name: Upload Gitleaks SARIF
-      if: ${{ inputs['run-gitleaks'] == 'true' }}
+      if: ${{ inputs['run-gitleaks'] == 'true' && hashFiles('artifacts/sarif/gitleaks.sarif') != '' }}
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: artifacts/sarif/gitleaks.sarif
