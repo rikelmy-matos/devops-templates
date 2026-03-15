@@ -49,13 +49,21 @@ runs:
       with:
         sarif_file: artifacts/sarif/trivy-fs.sarif
 
+    - name: Setup Python for Semgrep
+      if: ${{ inputs['run-semgrep'] == 'true' }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
     - name: Semgrep
       if: ${{ inputs['run-semgrep'] == 'true' }}
-      uses: returntocorp/semgrep-action@v1
-      with:
-        config: ${{ inputs['semgrep-config'] }}
-        generateSarif: true
-        save: artifacts/sarif/semgrep.sarif
+      shell: bash
+      run: |
+        pip install semgrep --quiet
+        semgrep scan --config "${{ inputs['semgrep-config'] }}" \
+          --sarif --output artifacts/sarif/semgrep.sarif \
+          --no-autofix \
+          . || true
 
     - name: Upload Semgrep SARIF
       if: ${{ inputs['run-semgrep'] == 'true' }}
