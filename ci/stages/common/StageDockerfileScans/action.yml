@@ -34,6 +34,11 @@ runs:
     - name: Trivy image scan (SARIF)
       uses: aquasecurity/trivy-action@0.35.0
       continue-on-error: true
+      env:
+        # Pass registry credentials so Trivy can pull from private registries
+        # without relying on the Docker daemon's credential store
+        TRIVY_USERNAME: ${{ inputs.username }}
+        TRIVY_PASSWORD: ${{ inputs.password }}
       with:
         image-ref: ${{ inputs.registry != '' && format('{0}/', inputs.registry) || '' }}${{ inputs.image }}:${{ inputs.tag }}
         format: 'sarif'
@@ -43,13 +48,16 @@ runs:
 
     - name: Upload Trivy SARIF to code scanning
       if: ${{ hashFiles('trivy-image.sarif') != '' }}
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: trivy-image.sarif
 
     - name: Anchore Grype scan via action
       uses: anchore/scan-action@v3
       continue-on-error: true
+      env:
+        GRYPE_REGISTRY_AUTH_USERNAME: ${{ inputs.username }}
+        GRYPE_REGISTRY_AUTH_PASSWORD: ${{ inputs.password }}
       with:
         image: ${{ inputs.registry != '' && format('{0}/', inputs.registry) || '' }}${{ inputs.image }}:${{ inputs.tag }}
         fail-build: false
@@ -58,7 +66,7 @@ runs:
 
     - name: Upload Grype SARIF to code scanning
       if: ${{ hashFiles('results.sarif') != '' }}
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: results.sarif
 
